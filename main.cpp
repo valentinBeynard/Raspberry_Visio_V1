@@ -202,5 +202,5 @@ void ShowFrames()
     cv::imshow("filtered contours", filterContoursOutput);
 	
 	//Pour l'affichage il faut attendre avant d'actualiser
-	if (cv::waitKey(30) >= 0) break;
+	cv::waitKey(30);
 }
