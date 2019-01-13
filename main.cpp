@@ -29,13 +29,12 @@ cv::Mat openOutput;
 cv::Mat findContoursOutput;
 cv::Mat approxContoursOutput;
 cv::Mat filterContoursOutput;
+cv::Mat rotatedRectanglesOutput;
 
 /* Vector of Vectors of Points = contours */
 std::vector<std::vector<cv::Point> > contours;
-std::vector<std::vector<cv::Point> > approxContours;
 std::vector<std::vector<cv::Point> > filterContours;
-std::vector<cv::Point2f> centroids;
-cv:: Point2f real_centroid;
+std::vector<cv::RotatedRect> rotatedRectangles;
 
 /* Network Tables */
 nt::NetworkTableInstance inst;
@@ -49,24 +48,12 @@ void ProcessFrame();
 void ShowFrames();
 
 
-double polygonArea(vector<Point> &polygon) 
-{ 
-    double area = 0.0;
-    int j = polygon.size() - 1;
-    for (int i = 0; i < polygon.size(); i++)
-    {
-        area += (polygon[j].x + polygon[i].x) * (polygon[j].y -polygon[i].y);
-        j = i;
-    }
-    return abs(area / 2.0);
-} 
-
 int main()
 {
 	time_t timestamp_debut = std::time (0);
 
     Init();
-    for(int i = 0; i < 100; i++)
+    while(true)
     {
         if(CaptureFrame())
         {
@@ -131,64 +118,35 @@ void ProcessFrame()
     std::cout << "############### " << contours.size() << " CONTOURS DETECTES ###############" << std::endl;
 
 
-    //########## Approx Contours ##########
-    approxContours.clear();
-    approxContours.resize(contours.size());
+    //########## Filter Contours ##########
+    filterContours.clear();
+    rotatedRectangles.clear();
     for (size_t i = 0; i < contours.size(); i++)
     {
-        cv::approxPolyDP(contours[i], approxContours[i], 17, true);
-    }
+        //Rotated rectangle autour du contour
+        RotatedRect rect = minAreaRect(contours[i]);
+        int height = rect.size.height;
+        int width = rect.size.width;
 
-
-    /*//########## Filter Contours ##########
-    filterContours.clear();
-    for (size_t i = 0; i < approxContours.size(); i++)
-    {
-        //std::cout << "######## CONTOUR N " << i << " ########" << std::endl;
-        cv::Rect boundRect = cv::boundingRect(approxContours[i]);
-
-        double contourArea = cv::contourArea(approxContours[i]);
-        //std::cout << "Area " << contourArea << std::endl;
-        if (contourArea < 10)//(contourArea > maxArea || contourArea < minArea)
+        //Si l'aire < 450 on ne garde pas
+        double area = height * width;
+        if(area < 750)
+            continue;
+        
+        //Calcul du ratio : si ratio < 1 alors on prend l'inverse
+        double ratio = double(height)/double(width);
+        if(ratio < 1)
+            ratio = 1/ratio;
+        //Si ratio < 1 ou ration > 5 on ne garde pas
+        if(abs(3.0 - ratio) > 2.0)
             continue;
 
-        double ratio = (double)boundRect.width / boundRect.height;
-        //std::cout << "Ratio " << ratio << std::endl;
-        //if (contourArea > maxArea || contourArea < minArea)
-        //	continue;
-        
-        //std::cout << "Angles " << approxContours[i].size() << std::endl;
-        //if (approxContours[i].size() != 4)
-        //	continue;
-
-        filterContours.push_back(approxContours[i]);
+        //Sinon on prend le contour et son rectangle
+        rotatedRectangles.push_back(rect);
+        filterContours.push_back(contours[i]);
     }
-    std::cout << "###### " << filterContours.size() << " contour trouve" << std::endl;*/
+    std::cout << "###### " << filterContours.size() << " contour filtrés trouve" << std::endl;
 
-
-    //########## Calcul centroid ##########
-    centroids.clear();
-    centroids.resize(approxContours.size());
-
-    real_centroid.x = 0.f;
-    real_centroid.y = 0.f;
-
-    for (size_t i = 0; i < approxContours.size(); i++)
-    {
-        for (size_t f = 0; f < approxContours[i].size(); f++)
-        {
-            centroids[i].x+=approxContours[i][f].x;
-            centroids[i].y+=approxContours[i][f].y;
-        }
-
-        centroids[i].x /= approxContours[i].size();
-        centroids[i].y /= approxContours[i].size();
-
-        real_centroid.x+=centroids[i].x;
-        real_centroid.y+=centroids[i].y;
-    }
-    real_centroid.x /= 2.f;
-    real_centroid.y /= 2.f;
     
     /*double angle;
     if(filterContours.size() != 0)
@@ -214,48 +172,30 @@ void ProcessFrame()
 
 void ShowFrames()
 {
-    //cv::imshow("input", input);
+    cv::imshow("input", input);
 
-    //cv::imshow("threshold", thresholdOutput);
+    cv::imshow("threshold", thresholdOutput);
 
-    //cv::imshow("erode and dilate", openOutput);
+    cv::imshow("erode and dilate", openOutput);
 
-    findContoursOutput = openOutput.clone();
-    cv::cvtColor(findContoursOutput, findContoursOutput, cv::COLOR_GRAY2RGB);
+    findContoursOutput = input.clone();
     cv::drawContours(findContoursOutput, contours, -1, cv::Scalar(0, 0, 255), 3);
     cv::imshow("find contours", findContoursOutput);
 
-    approxContoursOutput = openOutput.clone();
-    cv::cvtColor(approxContoursOutput, approxContoursOutput, cv::COLOR_GRAY2RGB);
-    for (size_t i = 0; i < approxContours.size(); i++)
-    {
-        for (size_t n = 0; n < approxContours[i].size(); n++)
-        {
-            cv::putText(approxContoursOutput, std::to_string(n), approxContours[i][n], cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255));
-        }
-    }
-    cv::drawContours(approxContoursOutput, approxContours, -1, cv::Scalar(0, 0, 255), 3);
-    cv::imshow("approx contours", approxContoursOutput);
-
-    /*filterContoursOutput = openOutput.clone();
-    cv::cvtColor(filterContoursOutput, filterContoursOutput, cv::COLOR_GRAY2RGB);
+    filterContoursOutput = input.clone();
     cv::drawContours(filterContoursOutput, filterContours, -1, cv::Scalar(255, 0, 0), 3);
-    cv::imshow("filtered contours", filterContoursOutput);*/
+    cv::imshow("filtered contours", filterContoursOutput);
 
-    filterContoursOutput = openOutput.clone();
-    cv::cvtColor(filterContoursOutput, filterContoursOutput, cv::COLOR_GRAY2RGB);
-    for (size_t i = 0; i < centroids.size(); i++)
+    rotatedRectanglesOutput = input.clone();
+    for(size_t i = 0; i < rotatedRectangles.size(); i++)
     {
-        float area = polygonArea(approxContours[i]);
-        cv::putText(filterContoursOutput, to_string(area), centroids[i], cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255));
+        //Affichage du rectangle
+        Point2f cotes[4];
+        rotatedRectangles[i].points(cotes);
+        for (int i = 0; i < 4; i++)
+            line(rotatedRectanglesOutput, cotes[i], cotes[(i+1)%4], Scalar(150,0,150), 3);
     }
-    if(centroids.size() == 2)
-    {
-        float ratioEntreAires = polygonArea(approxContours[0])/polygonArea(approxContours[1]);
-        cv::putText(filterContoursOutput, to_string(ratioEntreAires), Point(50, 50), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255));
-    }
-    cv::putText(filterContoursOutput, "X", real_centroid, cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255));
-    cv::imshow("centroids", filterContoursOutput);
+    cv::imshow("rect", rotatedRectanglesOutput);
 	
 	//Pour l'affichage il faut attendre avant d'actualiser
 	cv::waitKey(30);
