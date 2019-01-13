@@ -8,6 +8,9 @@
 #include <networktables/NetworkTableInstance.h>
 
 
+using namespace cv;
+using namespace std;
+
 /* Camera Specs and Configurations */
 /* Note:  Higher resolution & framerate is possible, depending upon processing cpu usage */
 cv::VideoCapture camera;
@@ -31,6 +34,8 @@ cv::Mat filterContoursOutput;
 std::vector<std::vector<cv::Point> > contours;
 std::vector<std::vector<cv::Point> > approxContours;
 std::vector<std::vector<cv::Point> > filterContours;
+std::vector<cv::Point2f> centroids;
+cv:: Point2f real_centroid;
 
 /* Network Tables */
 nt::NetworkTableInstance inst;
@@ -43,6 +48,18 @@ bool CaptureFrame();
 void ProcessFrame();
 void ShowFrames();
 
+
+double polygonArea(vector<Point> &polygon) 
+{ 
+    double area = 0.0;
+    int j = polygon.size() - 1;
+    for (int i = 0; i < polygon.size(); i++)
+    {
+        area += (polygon[j].x + polygon[i].x) * (polygon[j].y -polygon[i].y);
+        j = i;
+    }
+    return abs(area / 2.0);
+} 
 
 int main()
 {
@@ -67,17 +84,17 @@ int main()
 void Init()
 {
     /* Open camera and set properties */
-    camera.open(0);
+    camera.open(1);
 	camera.set(cv::CAP_PROP_FRAME_WIDTH, width);
 	camera.set(cv::CAP_PROP_FRAME_HEIGHT, height);
 	camera.set(cv::CAP_PROP_FPS, frames_per_sec);
 	camera.set(cv::CAP_PROP_BRIGHTNESS, 0);
 
     /* Create tables */
-	inst = nt::NetworkTableInstance::GetDefault();
+	/*inst = nt::NetworkTableInstance::GetDefault();
 	table = inst.GetTable("datatable");
 	entry = table->GetEntry("Angle");
-	inst.StartClientTeam(5553);
+	inst.StartClientTeam(5553);*/
 }
 
 
@@ -100,7 +117,7 @@ void ProcessFrame()
 
     //########## Threshold ##########
     //cv::inRange(input, Scalar(lowH, lowL, lowS), Scalar(highH, highL, highS), output);
-    cv::inRange(hsl, cv::Scalar(43, 225, 225), cv::Scalar(87, 255, 255), thresholdOutput);
+    cv::inRange(hsl, cv::Scalar(50, 130, 150), cv::Scalar(95, 255, 255), thresholdOutput);
 
 
     //########## Erode and Dilate ##########
@@ -123,7 +140,7 @@ void ProcessFrame()
     }
 
 
-    //########## Filter Contours ##########
+    /*//########## Filter Contours ##########
     filterContours.clear();
     for (size_t i = 0; i < approxContours.size(); i++)
     {
@@ -146,10 +163,34 @@ void ProcessFrame()
 
         filterContours.push_back(approxContours[i]);
     }
-    std::cout << "###### " << filterContours.size() << " contour trouve" << std::endl;
+    std::cout << "###### " << filterContours.size() << " contour trouve" << std::endl;*/
 
+
+    //########## Calcul centroid ##########
+    centroids.clear();
+    centroids.resize(approxContours.size());
+
+    real_centroid.x = 0.f;
+    real_centroid.y = 0.f;
+
+    for (size_t i = 0; i < approxContours.size(); i++)
+    {
+        for (size_t f = 0; f < approxContours[i].size(); f++)
+        {
+            centroids[i].x+=approxContours[i][f].x;
+            centroids[i].y+=approxContours[i][f].y;
+        }
+
+        centroids[i].x /= approxContours[i].size();
+        centroids[i].y /= approxContours[i].size();
+
+        real_centroid.x+=centroids[i].x;
+        real_centroid.y+=centroids[i].y;
+    }
+    real_centroid.x /= 2.f;
+    real_centroid.y /= 2.f;
     
-    double angle;
+    /*double angle;
     if(filterContours.size() != 0)
     {
         cv::Rect boundRect = cv::boundingRect(filterContours[0]);
@@ -167,17 +208,17 @@ void ProcessFrame()
     {
         entry.SetDouble(angle);
         std::cout << "Angle envoyé" << std::endl << std::endl;
-    }
+    }*/
 }
 
 
 void ShowFrames()
 {
-    cv::imshow("input", input);
+    //cv::imshow("input", input);
 
-    cv::imshow("threshold", thresholdOutput);
+    //cv::imshow("threshold", thresholdOutput);
 
-    cv::imshow("erode and dilate", openOutput);
+    //cv::imshow("erode and dilate", openOutput);
 
     findContoursOutput = openOutput.clone();
     cv::cvtColor(findContoursOutput, findContoursOutput, cv::COLOR_GRAY2RGB);
@@ -196,10 +237,25 @@ void ShowFrames()
     cv::drawContours(approxContoursOutput, approxContours, -1, cv::Scalar(0, 0, 255), 3);
     cv::imshow("approx contours", approxContoursOutput);
 
-    filterContoursOutput = openOutput.clone();
+    /*filterContoursOutput = openOutput.clone();
     cv::cvtColor(filterContoursOutput, filterContoursOutput, cv::COLOR_GRAY2RGB);
     cv::drawContours(filterContoursOutput, filterContours, -1, cv::Scalar(255, 0, 0), 3);
-    cv::imshow("filtered contours", filterContoursOutput);
+    cv::imshow("filtered contours", filterContoursOutput);*/
+
+    filterContoursOutput = openOutput.clone();
+    cv::cvtColor(filterContoursOutput, filterContoursOutput, cv::COLOR_GRAY2RGB);
+    for (size_t i = 0; i < centroids.size(); i++)
+    {
+        float area = polygonArea(approxContours[i]);
+        cv::putText(filterContoursOutput, to_string(area), centroids[i], cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255));
+    }
+    if(centroids.size() == 2)
+    {
+        float ratioEntreAires = polygonArea(approxContours[0])/polygonArea(approxContours[1]);
+        cv::putText(filterContoursOutput, to_string(ratioEntreAires), Point(50, 50), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255));
+    }
+    cv::putText(filterContoursOutput, "X", real_centroid, cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 0, 255));
+    cv::imshow("centroids", filterContoursOutput);
 	
 	//Pour l'affichage il faut attendre avant d'actualiser
 	cv::waitKey(30);
