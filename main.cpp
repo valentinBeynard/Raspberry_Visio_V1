@@ -41,6 +41,14 @@ nt::NetworkTableInstance inst;
 std::shared_ptr<nt::NetworkTable> table;
 nt::NetworkTableEntry entry;
 
+cv::Point2f target, real_centroid;
+float orientation;
+const double t = 0.2f;
+
+
+float GetOrientation(Point2f v0, Point2f v1);
+void GetDirection(RotatedRect rect, Point2f *r);
+bool compare_x(RotatedRect rectA, RotatedRect rectB);
 
 void Init();
 bool CaptureFrame();
@@ -68,6 +76,32 @@ int main()
     return 0;
 }
 
+float GetOrientation(Point2f v0, Point2f v1)
+{
+		return v0.x*v1.y - v0.y*v1.x;
+}
+
+void GetDirection(RotatedRect rect, Point2f *r)
+{
+	Point2f vertices[4];
+	rect.points(vertices);
+
+	r->x = vertices[1].x - vertices[0].x;
+	r->y = vertices[1].y - vertices[0].y;
+}
+
+bool compare_x(RotatedRect rectA, RotatedRect rectB)
+{
+	if( rectA.center.x > rectB.center.x )
+	{ 
+		return false;
+	}
+	else
+	{
+		return true;
+	}
+}
+
 void Init()
 {
     /* Open camera and set properties */
@@ -82,6 +116,9 @@ void Init()
 	table = inst.GetTable("datatable");
 	entry = table->GetEntry("Angle");
 	inst.StartClientTeam(5553);*/
+
+    target.x = 400;
+	target.y = 300;
 }
 
 
@@ -146,6 +183,54 @@ void ProcessFrame()
         filterContours.push_back(contours[i]);
     }
     std::cout << "###### " << filterContours.size() << " contour filtrés trouve" << std::endl;
+
+    //########## Sorting rotated rectangles ##########
+	std::sort(rotatedRectangles.begin(), rotatedRectangles.end(), compare_x);
+
+
+	//########## Couple definition ##########
+	if (rotatedRectangles.size() > 1)
+	{
+		Point2f v0, v1;
+
+	
+		GetDirection(rotatedRectangles[0], &v0);
+		GetDirection(rotatedRectangles[1], &v1);
+		orientation = GetOrientation(v0, v1);
+			
+	}
+	else
+	{
+		orientation = 0.0f;
+		// Impossible Targeting
+	}
+
+
+    //########## Calcul centroid ##########
+	real_centroid.x = 0.f;
+	real_centroid.y = 0.f;
+
+	if (rotatedRectangles.size())
+	{
+	
+		for (size_t i = 0; i < rotatedRectangles.size(); i++)
+		{
+
+			real_centroid.x += rotatedRectangles[i].center.x;
+			real_centroid.y += rotatedRectangles[i].center.y;
+		}
+		real_centroid.x /= rotatedRectangles.size();
+		real_centroid.y /= rotatedRectangles.size();
+	}
+	else
+	{
+		real_centroid.x = 400;
+		real_centroid.y = 300;
+	}
+
+	// Smoothed target
+	target.x += (real_centroid.x - target.x)*t;
+	target.y += (real_centroid.y - target.y)*t;
 
     
     /*double angle;
