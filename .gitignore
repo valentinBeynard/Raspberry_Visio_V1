@@ -1,6 +1,5 @@
-
-# Created by https://www.gitignore.io/api/c++,cmake,linux,video,windows,codeblocks,visualstudio
-# Edit at https://www.gitignore.io/?templates=c++,cmake,linux,video,windows,codeblocks,visualstudio
+# Created by https://www.gitignore.io/api/c++,cmake,linux,video,windows,codeblocks,visualstudio,visualstudiocode
+# Edit at https://www.gitignore.io/?templates=c++,cmake,linux,video,windows,codeblocks,visualstudio,visualstudiocode
 
 ### C++ ###
 # Prerequisites
@@ -86,6 +85,17 @@ obj/
 *.swf
 *.vob
 *.wmv
+
+### VisualStudioCode ###
+.vscode/*
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+.vscode/extensions.json
+
+### VisualStudioCode Patch ###
+# Ignore all local history of files
+.history
 
 ### Windows ###
 # Windows thumbnail cache files
@@ -452,4 +462,4 @@ ASALocalRun/
 # BeatPulse healthcheck temp database
 healthchecksdb
 
-# End of https://www.gitignore.io/api/c++,cmake,linux,video,windows,codeblocks,visualstudio
+# End of https://www.gitignore.io/api/c++,cmake,linux,video,windows,codeblocks,visualstudio,visualstudiocode
