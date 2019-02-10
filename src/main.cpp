@@ -28,11 +28,18 @@ int main(int, char**)
 }
 */
 // Definir le code de filtrage qui sera compilé:
+
 //#define PRECOMPIL_IMAGEFILTER_HSV
+
+#define RASPICAM_API
+#define STREAM_5553
+#define STREAM_PORT	8081
+#define STREAM_SINK_NAME	"httppi5553"
 
 
 #include "PrecompilationDefine.h"
 
+#include <unistd.h>
 #include <iostream>
 #include <chrono>
 #include <vector>
@@ -51,6 +58,12 @@ int main(int, char**)
 #include "Spline.h"
 #include "TopView.h"
 
+/* API for Raspberry PI Camera on Camera Bus */
+#include "raspicam_cv.h"
+
+/* Streaming Serveur */
+#include <cscore.h>
+
 //#include <networktables/NetworkTable.h>
 //#include <networktables/NetworkTableInstance.h>
 
@@ -65,6 +78,14 @@ unsigned long RoboLyonFlags = 0;
 /* Camera Specs and Configurations */
 /* Note:  Higher resolution & framerate is possible, depending upon processing cpu usage */
 cv::VideoCapture camera;
+
+/* RaspiCAM for Raspberry Camera on BUS */
+raspicam::RaspiCam_Cv* camera_pi;
+
+/* Stream */
+cs::CvSource* stream_src;
+cs::MjpegServer* stream_server;
+
 /*
 const int frames_per_sec = 5;
 const double width = CAPTURED_IMAGE_WIDTH;
@@ -156,11 +177,23 @@ bool Init();
 bool CaptureFrame();
 void ProcessFrame();
 void ShowFrames();
+void StreamFrames();
+bool InitStream();
 
 const double t = 0.2f;
 
+void StreamFrames()
+{
+	stream_src->PutFrame(SrcImage);
+}
 
-
+bool InitStream()
+{
+	stream_server = new cs::MjpegServer(STREAM_SINK_NAME, STREAM_PORT);
+	stream_src = new cs::CvSource("cvsource5553", cs::VideoMode::kBGR,CAPTURED_IMAGE_WIDTH,CAPTURED_IMAGE_HEIGHT,camera_pi->get(CV_CAP_PROP_FPS));
+	stream_server->SetSource(*stream_src);
+	return true;
+}
 
 double polygonArea(vector<Point> &polygon)
 {
@@ -180,22 +213,50 @@ int main()
 	time_t timestamp_debut = std::time(0);
 
 	if (!Init())
+	{
+		cerr << "Error Init Camera !" << std::endl;
 		return 0;
+	}
+	#ifdef STREAM_5553
+	if (!InitStream())
+	{
+		cerr << "Error Init Stream" << std::endl;
+		return 0;
+	}
+	#endif
+	//CaptureFrame();
+	//cv::imwrite("output_img.jpg", SrcImage);
+	/*
+	Size s = Size(320,240);
+	VideoWriter outputVideo("outputvid.avi",CV_FOURCC('M','J','P','G') , 50, s, true);
 
+	if(!outputVideo.isOpened())
+	{
+		cerr << "Error video writter" << std::endl;
+		return 0;	
+	}
 
-
+	std::cout << "Start Record !" << std::endl; 
+	*/
 	//for (int i = 0; i < 100; i++)
-	while (1)
+	for(int i = 0; i<1000; i++)
 	{
 		if (CaptureFrame())
 		{
-			ProcessFrame();
-			ShowFrames();
+//			outputVideo.write(SrcImage);
+			//ProcessFrame();
+			#ifdef STREAM_5553
+				StreamFrames();
+				//ShowFrames();
+			#endif
 		}
 	}
-
+	//cv::imwrite("output_img.jpg", SrcImage);
 	time_t timestamp_fin = std::time(0);
 	std::cout << "Programme terminé au bout de " << timestamp_fin - timestamp_debut << " secondes" << std::endl;
+	std::cout << "FPS = " << 1000.0 /  (timestamp_fin - timestamp_debut) << std::endl;
+
+	camera_pi->release();
 
 	return 0;
 }
@@ -211,6 +272,51 @@ void on_trackbar_camheight(int value, void *ptr)
 	vision.setCameraYWorld((double)value / 100);
 }
 
+#ifdef RASPICAM_API
+bool Init()
+{
+	
+	// Load Intrinsic parameter of the Camera
+	if (!vision.loadCameraIntrinsic(INTRINSIC_FILENAME))
+		return false;
+	// Load The Visual target Pair 3D descrition.( orign(0,0,0) in between the 2 vision targets and on the ground level.) 
+	if (!vision.loadVisionTargetModel(VISIONTARGET_FILENAME))
+		return false;
+
+	camera_pi = new raspicam::RaspiCam_Cv();
+	camera_pi->set(CV_CAP_PROP_FORMAT, CV_8UC3);
+	camera_pi->set(CV_CAP_PROP_MODE, CAMERA_MODE);
+	if( !camera_pi->open() )
+	{
+		cerr << "Error loading raspicam !" << std::endl;
+		return false;
+	}
+	camera_pi->set(CV_CAP_PROP_BRIGHTNESS, camera_bright);
+
+	camera_pi->set(CV_CAP_PROP_FRAME_WIDTH, CAPTURED_IMAGE_WIDTH);
+	camera_pi->set(CV_CAP_PROP_FRAME_HEIGHT, CAPTURED_IMAGE_HEIGHT);
+	camera_pi->set(CV_CAP_PROP_FPS, 30);
+	camera_pi->set(CV_CAP_PROP_EXPOSURE, 70);
+	//camera_pi->set(CV_CAP_PROP_FORMAT, CV_8UC3);
+
+	return true;
+/*
+	camera_pi = new raspicam::RaspiCam_Cv();
+	if( !camera_pi->open() )
+	{
+		cerr << "Error loading raspicam !" << std::endl;
+		return false;
+	}
+	camera_pi->set(CV_CAP_PROP_BRIGHTNESS, camera_bright);
+
+	camera_pi->set(CV_CAP_PROP_FRAME_WIDTH, CAPTURED_IMAGE_WIDTH);
+camera_pi->set(CV_CAP_PROP_FRAME_HEIGHT, CAPTURED_IMAGE_HEIGHT);
+	//camera_pi->set(cv::CAP_PROP_FPS, 50);
+*/
+}
+#else
+
+
 
 bool Init()
 {
@@ -224,15 +330,20 @@ bool Init()
 	/* Initialize the Robot Path */ // ( une spline pour le moment mais peut être plutot des cercles et des tangentes ... à voir )
 	robotPath.insertKnot(2);
 
+	
+
 	/* Open camera and set properties */
-	camera.open(0);
+	if(!camera.open(0))
+	{ std::cout << "Loading Error" << std::endl;}
+	
 	//camera.open("D:/_PROJETS/FIRST/Image/videorobot.mp4");
 	camera.set(cv::CAP_PROP_BRIGHTNESS, camera_bright);
 
 	camera.set(cv::CAP_PROP_FRAME_WIDTH, CAPTURED_IMAGE_WIDTH);
 	camera.set(cv::CAP_PROP_FRAME_HEIGHT, CAPTURED_IMAGE_HEIGHT);
 	camera.set(cv::CAP_PROP_FPS, 50);
-
+	camera.set(cv::CAP_PROP_BRIGHTNESS, camera_bright);
+	camera.set(cv::CAP_PROP_MODE,1);
 	/* Create tables */
 	/*inst = nt::NetworkTableInstance::GetDefault();
 	table = inst.GetTable("datatable");
@@ -243,7 +354,7 @@ bool Init()
 	target.y = 300;
 
 // BASIC FILTER PARAM (toujours actif et compilé, quelquesoit le filtrage actif)
-	namedWindow("CAMERA", WINDOW_AUTOSIZE);
+	/*namedWindow("CAMERA", WINDOW_AUTOSIZE);
 	resizeWindow("CAMERA", 1000, 200);
 	createTrackbar("CamLight", "CAMERA", &camera_bright, 100, NULL);
 	createTrackbar("CamFOV", "CAMERA",nullptr, 900, on_trackbar_fov);
@@ -278,16 +389,44 @@ bool Init()
 	resizeWindow("CONTOUR-DETECT", 1000, 200);
 	createTrackbar("Horizon", "CONTOUR-DETECT", &horizon, 100, NULL);
 	createTrackbar("AreaMin", "CONTOUR-DETECT", &areamin_ratio, 1000, NULL);
-	createTrackbar("AreaMax", "CONTOUR-DETECT", &areamax_ratio, 1000, NULL);
+	createTrackbar("AreaMax", "CONTOUR-DETECT", &areamax_ratio, 1000, NULL);*/
 
 	return true;
 }
+#endif
 
+#ifdef RASPICAM_API
 
 bool CaptureFrame()
 {
-	camera.set(cv::CAP_PROP_BRIGHTNESS, camera_bright);
+	//camera_pi->set(CV_CAP_PROP_BRIGHTNESS, camera_bright);
+/*
+	if (BITGET(RoboLyonFlags, FLAG_CAPTURE_PAUSE))
+	{
+		RawImage = SrcImage.clone();
+		return true;
+	}*/
+	time_t t_0 = std::time(0);
+	if (!camera_pi->grab() )
+	{
+		cerr << "Error Grabbing Video Frame " << std::endl;
+		return false;
+	}else
+	{
+		camera_pi->retrieve(SrcImage);
+		//cv::cvtColor(YUV_SrcImage, SrcImage, cv::COLOR_YCrCb2BGR);
+		undistort(SrcImage, RawImage, vision.m_intrinsic, vision.m_distCoeffs);
+		std::cout << "Time Elapsed : " << std::time(0) - 1.0 * t_0 << std::endl;
+		return true;
+	}
+	
+ }
 
+#else
+bool CaptureFrame()
+{
+	camera.set(cv::CAP_PROP_BRIGHTNESS, camera_bright);
+/*
 	// Si on demande pause, on retourne true
 	if (BITGET(RoboLyonFlags, FLAG_CAPTURE_PAUSE))
 	{
@@ -295,7 +434,10 @@ bool CaptureFrame()
 		RawImage = SrcImage.clone();
 		return true;
 	}
-
+	//camera >> SrcImage;
+*/	
+	
+	
 	if (!camera.read(SrcImage))
 	{
 		std::cout << "Error Grabbing Video Frame" << std::endl;
@@ -309,6 +451,7 @@ bool CaptureFrame()
 		return true;
 	}
 }
+#endif
 
 float GetOrientation(Point2f v0, Point2f v1)
 {

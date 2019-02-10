@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 project(2019_Raspberry) # Project Name Here
 
 find_package(wpilib REQUIRED)
+find_package(raspicam PATHS /usr/local/lib REQUIRED)
 
 set(SRCS_DIR
     src/
@@ -33,4 +34,4 @@ set(HEADERS
     )
 
 add_executable(2019_Raspberry.exe ${SRCS} ${HEADERS}) # exectuable name as first parameter
-target_link_libraries(2019_Raspberry.exe ntcore cscore wpiutil)
+target_link_libraries(2019_Raspberry.exe ntcore cscore wpiutil ${raspicam_CV_LIBS})
